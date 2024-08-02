@@ -1,0 +1,103 @@
+name: Open62541 v1.2.2 dlls with encryption for windows 32/64 bits
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build_windows:
+    runs-on: windows-latest
+    steps:
+    - name: Checkout mbedtls repository
+      run: |    
+        git clone  https://github.com/Mbed-TLS/mbedtls.git
+        cd mbedtls
+        git checkout tags/v2.26.0 #this is the version needed by open62541 v1.2.2
+        git submodule update --init
+
+    - name: Checkout open62541 repository
+      run: |
+        git clone https://github.com/open62541/open62541.git
+        cd open62541
+        git checkout tags/v1.2.2
+        # see https://github.com/open62541/open62541/pull/4753 and https://github.com/olivluca/open62541/commit/fb85aa3a5e25351107f56d7309bb656d4ef77c76
+        curl -o tools/nodeset_compiler/type_parser.py https://raw.githubusercontent.com/olivluca/open62541/master/tools/nodeset_compiler/type_parser.py
+
+    - name: Build mbedtls for Win32
+      run: |
+        cd mbedtls
+        mkdir build32
+        # must enable `USE_SHARED_MBEDTLS_LIBRARY` and `USE_STATIC_MBEDTLS_LIBRARY` at the same time
+        cmake -A Win32 -S . -B build32 -D USE_STATIC_MBEDTLS_LIBRARY=ON -D USE_SHARED_MBEDTLS_LIBRARY=ON -DCMAKE_BUILD_TYPE=Release
+        cmake --build build32 --config Release -t mbedcrypto  # generate mbedcrypto.dll
+        cmake --build build32 --config Release -t mbedcrypto_static  # generate mbedcrypto.lib
+        cmake --build build32 --config Release -t mbedx509  # generate mbedx509.dll (depends mbedcrypto.lib)
+        cmake --build build32 --config Release -t mbedx509_static  # generate mbedx509.lib
+        cmake --build build32 --config Release -t mbedtls  # generate mbedtls.dll (depends mbedx509.lib)
+        cmake --build build32 --config Release -t mbedtls_static  # generate mbedtls.lib
+
+    - name: Upload artifacts for mbedtls/Win32
+      uses: actions/upload-artifact@v3
+      with:
+        name: mbedtls-windows-32
+        path: |
+          mbedtls/build32/
+
+    - name: Build open62541 with mbedtls for Win32
+      run: |
+        cd open62541
+        mkdir build32_release
+        cmake -A Win32 -S . -B build32_release -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=1 -DUA_ENABLE_ENCRYPTION=ON -DUA_ENABLE_ENCRYPTION_MBEDTLS=ON -DMBEDTLS_INCLUDE_DIRS="..\mbedtls\include" -DMBEDTLS_LIBRARY="..\mbedtls\build32\library\Release\mbedtls.lib" -DMBEDX509_LIBRARY="..\mbedtls\build32\library\Release\mbedx509.lib" -DMBEDCRYPTO_LIBRARY="..\mbedtls\build32\library\Release\mbedcrypto.lib" 
+        cmake --build build32_release --config Release
+        Rename-Item build32_release/bin/Release/open62541.dll libopen62541.dll
+
+
+    - name: Upload artifacts for Win32
+      uses: actions/upload-artifact@v3
+      with:
+        name: v1.2.2-libraries-windows-32
+        path: |
+          open62541/build32_release/src_generated/open62541/config.h
+          open62541/build32_release/src_generated/open62541/types_generated.h
+          open62541/build32_release/bin/
+          open62541/build32_release/libopen62541.dll
+
+    - name: Build mbedtls for Win64
+      run: |
+        cd mbedtls
+        mkdir build64
+        # must enable `USE_SHARED_MBEDTLS_LIBRARY` and `USE_STATIC_MBEDTLS_LIBRARY` at the same time
+        cmake -A x64 -S . -B build64 -D USE_STATIC_MBEDTLS_LIBRARY=ON -D USE_SHARED_MBEDTLS_LIBRARY=ON -DCMAKE_BUILD_TYPE=Release
+        cmake --build build64 --config Release -t mbedcrypto  # generate mbedcrypto.dll
+        cmake --build build64 --config Release -t mbedcrypto_static  # generate mbedcrypto.lib
+        cmake --build build64 --config Release -t mbedx509  # generate mbedx509.dll (depends mbedcrypto.lib)
+        cmake --build build64 --config Release -t mbedx509_static  # generate mbedx509.lib
+        cmake --build build64 --config Release -t mbedtls  # generate mbedtls.dll (depends mbedx509.lib)
+        cmake --build build64 --config Release -t mbedtls_static  # generate mbedtls.lib
+
+    - name: Upload artifacts for mbedtls/Win64
+      uses: actions/upload-artifact@v3
+      with:
+        name: mbedtls-windows-64
+        path: |
+          mbedtls/build64/
+
+    - name: Build open62541 with mbedtls for Win64
+      run: |
+        cd open62541
+        mkdir build64_release
+        cmake -A x64 -S . -B build64_release -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=1 -DUA_ENABLE_ENCRYPTION=ON -DUA_ENABLE_ENCRYPTION_MBEDTLS=ON -DMBEDTLS_INCLUDE_DIRS="..\mbedtls\include" -DMBEDTLS_LIBRARY="..\mbedtls\build64\library\Release\mbedtls.lib" -DMBEDX509_LIBRARY="..\mbedtls\build64\library\Release\mbedx509.lib" -DMBEDCRYPTO_LIBRARY="..\mbedtls\build64\library\Release\mbedcrypto.lib" 
+        cmake --build build64_release --config Release
+        Rename-Item build64_release/bin/Release/open62541.dll libopen62541.dll
+
+
+    - name: Upload artifacts for Win64
+      uses: actions/upload-artifact@v3
+      with:
+        name: v1.2.2-libraries-windows-64
+        path: |
+          open62541/build64_release/src_generated/open62541/config.h
+          open62541/build64_release/src_generated/open62541/types_generated.h
+          open62541/build64_release/bin/
+          open62541/build64_release/libopen62541.dll
+    
+ 
